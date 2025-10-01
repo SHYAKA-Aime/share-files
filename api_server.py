@@ -4,23 +4,35 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import base64
 from urllib.parse import urlparse, parse_qs
-import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'dsa'))
-from parser import parse_transactions
+# Simple in-memory storage
+transactions = []
+next_id = 1
 
-try:
-    transactions = parse_transactions("modified_sms_v2.xml")
-    print(f"Loaded {len(transactions)} transactions from XML")
-except FileNotFoundError:
-    print("Error: modified_sms_v2.xml not found")
-    transactions = []
-except Exception as e:
-    print(f"Error parsing XML: {e}")
-    transactions = []
+def load_transactions():
+    """Load transactions from JSON file"""
+    global transactions, next_id
+    try:
+        with open('data/processed/transactions.json', 'r') as f:
+            transactions = json.load(f)
+            next_id = max([t.get('id', 0) for t in transactions], default=0) + 1
+        print(f"Loaded {len(transactions)} transactions from JSON")
+    except FileNotFoundError:
+        print("No transactions file found. Starting with empty list.")
+        transactions = []
+    except Exception as e:
+        print(f"Error loading transactions: {e}")
+        transactions = []
 
-next_id = max([t.get('id', 0) for t in transactions], default=0) + 1
+def save_transactions():
+    """Save transactions to JSON file"""
+    try:
+        os.makedirs('data/processed', exist_ok=True)
+        with open('data/processed/transactions.json', 'w') as f:
+            json.dump(transactions, f, indent=2)
+    except Exception as e:
+        print(f"Error saving transactions: {e}")
 
 class AuthHandler:
     """Handles Basic Authentication"""
@@ -139,7 +151,7 @@ class TransactionAPIHandler(BaseHTTPRequestHandler):
                 transaction_id = int(path.split('/')[-1])
                 
                 for t in transactions:
-                    if t["id"] == transaction_id:
+                    if t.get("id") == transaction_id:
                         self._send_json(200, {
                             'success': True,
                             'transaction': t
@@ -168,6 +180,7 @@ class TransactionAPIHandler(BaseHTTPRequestHandler):
     
     def do_POST(self):
         """Handle POST requests to create new transaction"""
+        global next_id
         
         is_authenticated, username = self._check_auth()
         if not is_authenticated:
@@ -175,8 +188,6 @@ class TransactionAPIHandler(BaseHTTPRequestHandler):
         
         if self.path == '/transactions':
             try:
-                global next_id
-                
                 content_length = int(self.headers.get('Content-Length', 0))
                 if content_length == 0:
                     self._send_json(400, {
@@ -201,6 +212,7 @@ class TransactionAPIHandler(BaseHTTPRequestHandler):
                 next_id += 1
                 
                 transactions.append(new_transaction)
+                save_transactions()
                 
                 self._send_json(201, {
                     'success': True,
@@ -239,7 +251,7 @@ class TransactionAPIHandler(BaseHTTPRequestHandler):
                 transaction_id = int(self.path.split('/')[-1])
                 
                 for t in transactions:
-                    if t['id'] == transaction_id:
+                    if t.get('id') == transaction_id:
                         content_length = int(self.headers.get('Content-Length', 0))
                         if content_length == 0:
                             self._send_json(400, {
@@ -255,6 +267,7 @@ class TransactionAPIHandler(BaseHTTPRequestHandler):
                         update_data.pop('id', None)
                         
                         t.update(update_data)
+                        save_transactions()
                         
                         self._send_json(200, {
                             'success': True,
@@ -300,8 +313,10 @@ class TransactionAPIHandler(BaseHTTPRequestHandler):
                 transaction_id = int(self.path.split('/')[-1])
                 
                 for i, t in enumerate(transactions):
-                    if t['id'] == transaction_id:
+                    if t.get('id') == transaction_id:
                         deleted = transactions.pop(i)
+                        save_transactions()
+                        
                         self._send_json(200, {
                             'success': True,
                             'message': 'Transaction deleted successfully',
@@ -336,6 +351,8 @@ class TransactionAPIHandler(BaseHTTPRequestHandler):
 
 def run_server(port=8000):
     """Start the API server"""
+    load_transactions()
+    
     server_address = ('', port)
     httpd = HTTPServer(server_address, TransactionAPIHandler)
     
@@ -343,6 +360,12 @@ def run_server(port=8000):
     print(f"Running on: http://localhost:{port}")
     print(f"Authentication: Basic Auth Required")
     print(f"Loaded: {len(transactions)} transactions")
+    print(f"\nAvailable endpoints:")
+    print(f"  GET    /transactions")
+    print(f"  GET    /transactions/{{id}}")
+    print(f"  POST   /transactions")
+    print(f"  PUT    /transactions/{{id}}")
+    print(f"  DELETE /transactions/{{id}}")
     print(f"\nServer running... (Press Ctrl+C to stop)\n")
     
     try:
