@@ -7,8 +7,8 @@ from urllib.parse import urlparse, parse_qs
 import sys
 import os
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from dsa.parser import parse_transactions
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'dsa'))
+from parser import parse_transactions
 
 try:
     transactions = parse_transactions("modified_sms_v2.xml")
