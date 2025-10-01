@@ -1,147 +1,161 @@
 import xml.etree.ElementTree as ET
+import json
 import re
 from datetime import datetime
 
-def extract_transaction_details(body_text):
-    """
-    Extract structured data from SMS body text
-    """
-    details = {}
+def parse_sms_body(body):
+    """Extract transaction details from SMS body text"""
+    data = {
+        'amount': None,
+        'recipient_name': None,
+        'recipient_account': None,
+        'tx_id': None,
+        'new_balance': None,
+        'fee': None,
+        'transaction_type': None,
+        'datetime': None,
+        'sender_name': None,
+        'sender_phone': None
+    }
     
-    tx_id_match = re.search(r'TxId:\s*(\d+)', body_text)
-    if tx_id_match:
-        details['tx_id'] = tx_id_match.group(1)
-    
-    amount_match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*RWF', body_text)
+    amount_match = re.search(r'(\d+[\.,]?\d*)\s*RWF', body)
     if amount_match:
-        amount_str = amount_match.group(1).replace(',', '')
-        details['amount'] = int(amount_str)
+        data['amount'] = float(amount_match.group(1).replace(',', ''))
     
-    recipient_match = re.search(r'to\s+([^0-9]+?)\s+(\d+)', body_text)
-    if recipient_match:
-        details['recipient_name'] = recipient_match.group(1).strip()
-        details['recipient_code'] = recipient_match.group(2)
+    txid_match = re.search(r'TxId[:\s]+(\d+)', body, re.IGNORECASE)
+    if txid_match:
+        data['tx_id'] = txid_match.group(1)
     
-    sender_match = re.search(r'from\s+([^(]+)\s*\(\*+(\d+)\)', body_text)
-    if sender_match:
-        details['sender_name'] = sender_match.group(1).strip()
-        details['sender_phone'] = sender_match.group(2)
+    financial_id_match = re.search(r'Financial Transaction Id[:\s]+(\d+)', body, re.IGNORECASE)
+    if financial_id_match:
+        data['tx_id'] = financial_id_match.group(1)
     
-    balance_match = re.search(r'(?:new balance|NEW BALANCE)\s*:?\s*(\d{1,3}(?:,\d{3})*)\s*RWF', body_text, re.IGNORECASE)
+    balance_match = re.search(r'(?:new balance|NEW BALANCE)[:\s]+(\d+[\.,]?\d*)\s*RWF', body, re.IGNORECASE)
     if balance_match:
-        balance_str = balance_match.group(1).replace(',', '')
-        details['new_balance'] = int(balance_str)
+        data['new_balance'] = float(balance_match.group(1).replace(',', ''))
     
-    fee_match = re.search(r'Fee was:?\s*(\d{1,3}(?:,\d{3})*)\s*RWF', body_text)
+    fee_match = re.search(r'Fee was[:\s]+(\d+)\s*RWF', body, re.IGNORECASE)
     if fee_match:
-        fee_str = fee_match.group(1).replace(',', '')
-        details['fee'] = int(fee_str)
+        data['fee'] = float(fee_match.group(1))
     
-    transferred_match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*RWF transferred to', body_text)
-    if transferred_match:
-        amount_str = transferred_match.group(1).replace(',', '')
-        details['amount'] = int(amount_str)
+    payment_match = re.search(r'payment of .+ to ([A-Za-z\s]+)\s+(\d+)', body, re.IGNORECASE)
+    if payment_match:
+        data['recipient_name'] = payment_match.group(1).strip()
+        data['recipient_account'] = payment_match.group(2)
+        data['transaction_type'] = 'payment'
     
-    received_match = re.search(r'received\s+(\d{1,3}(?:,\d{3})*)\s*RWF from', body_text)
+    transfer_match = re.search(r'transferred to ([A-Za-z\s]+)\s+\((\d+)\)', body, re.IGNORECASE)
+    if transfer_match:
+        data['recipient_name'] = transfer_match.group(1).strip()
+        data['sender_phone'] = transfer_match.group(2)
+        data['transaction_type'] = 'transfer'
+    
+    received_match = re.search(r'received .+ from ([A-Za-z\s]+)\s+\(\*+(\d+)\)', body, re.IGNORECASE)
     if received_match:
-        amount_str = received_match.group(1).replace(',', '')
-        details['amount'] = int(amount_str)
+        data['sender_name'] = received_match.group(1).strip()
+        data['sender_phone'] = received_match.group(2)
+        data['transaction_type'] = 'received'
     
-    deposit_match = re.search(r'deposit of\s+(\d{1,3}(?:,\d{3})*)\s*RWF', body_text)
-    if deposit_match:
-        amount_str = deposit_match.group(1).replace(',', '')
-        details['amount'] = int(amount_str)
+    if 'deposit' in body.lower():
+        data['transaction_type'] = 'deposit'
+        data['recipient_name'] = 'Cash Deposit'
     
-    payment_to_match = re.search(r'payment of\s+(\d{1,3}(?:,\d{3})*)\s*RWF to\s+([^0-9]+)', body_text)
-    if payment_to_match:
-        amount_str = payment_to_match.group(1).replace(',', '')
-        details['amount'] = int(amount_str)
-        details['recipient_name'] = payment_to_match.group(2).strip()
+    if 'airtime' in body.lower():
+        data['transaction_type'] = 'airtime'
+        data['recipient_name'] = 'Airtime'
     
-    return details
+    datetime_match = re.search(r'at (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', body)
+    if datetime_match:
+        data['datetime'] = datetime_match.group(1)
+    
+    return data
 
-def determine_transaction_type(body_text):
-    """
-    Determine the type of transaction from SMS body
-    """
-    body_lower = body_text.lower()
+def determine_payment_transfer_types(transaction_type, body):
+    """Determine payment_type and transfer_type based on transaction"""
+    payment_type = None
+    transfer_type = 'MOMO'
     
-    if 'received' in body_lower and 'from' in body_lower:
-        return 'received'
-    elif 'transferred to' in body_lower:
-        return 'transfer'
-    elif 'deposit' in body_lower and 'added' in body_lower:
-        return 'deposit'
-    elif 'payment of' in body_lower and 'to' in body_lower:
-        return 'payment'
-    elif 'airtime' in body_lower:
-        return 'airtime'
-    else:
-        return 'other'
+    if transaction_type == 'payment':
+        payment_type = 'Sent'
+    elif transaction_type == 'received':
+        payment_type = 'Received'
+    elif transaction_type == 'transfer':
+        payment_type = 'Sent'
+    elif transaction_type == 'deposit':
+        payment_type = 'Received'
+    elif transaction_type == 'airtime':
+        payment_type = 'Sent'
+    
+    return payment_type, transfer_type
 
 def parse_transactions(xml_file):
-    """
-    Parse XML file and convert to list of transaction dictionaries
-    """
-    try:
-        tree = ET.parse(xml_file)
-        root = tree.getroot()
-    except FileNotFoundError:
-        raise FileNotFoundError(f"XML file '{xml_file}' not found")
-    except ET.ParseError as e:
-        raise Exception(f"XML parsing error: {e}")
+    """Parse XML file and convert to list of transaction dictionaries"""
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
     
     transactions = []
-    transaction_id = 1
+    trans_id = 1
     
-    for sms in root.findall('sms'):
-        transaction = {}
-        
-        transaction['id'] = transaction_id
-        transaction_id += 1
-        
+    for sms in root.findall('.//sms'):
         protocol = sms.get('protocol')
-        if protocol:
-            transaction['protocol'] = int(protocol)
-        
         address = sms.get('address')
-        if address:
-            transaction['address'] = address
-        
-        date = sms.get('date')
-        if date:
-            try:
-                timestamp = int(date) / 1000
-                dt = datetime.fromtimestamp(timestamp)
-                transaction['date'] = dt.strftime('%Y-%m-%d')
-                transaction['timestamp'] = dt.isoformat()
-            except (ValueError, OSError):
-                transaction['date'] = None
-                transaction['timestamp'] = None
-        
-        msg_type = sms.get('type')
-        if msg_type:
-            transaction['type'] = int(msg_type)
-        
-        body = sms.get('body')
-        if body:
-            transaction['body'] = body
-            transaction['transaction_type'] = determine_transaction_type(body)
-            details = extract_transaction_details(body)
-            transaction.update(details)
-        
+        date_timestamp = sms.get('date')
         readable_date = sms.get('readable_date')
-        if readable_date:
-            transaction['readable_date'] = readable_date
+        body = sms.get('body', '')
         
-        read = sms.get('read')
-        if read:
-            transaction['read'] = int(read)
+        parsed_data = parse_sms_body(body)
         
-        status = sms.get('status')
-        if status:
-            transaction['status'] = int(status)
+        date_obj = None
+        timestamp_iso = None
+        if date_timestamp:
+            try:
+                timestamp = int(date_timestamp) / 1000
+                date_obj = datetime.fromtimestamp(timestamp)
+                timestamp_iso = date_obj.isoformat() + 'Z'
+            except (ValueError, OSError):
+                pass
+        
+        payment_type, transfer_type = determine_payment_transfer_types(
+            parsed_data['transaction_type'], 
+            body
+        )
+        
+        transaction = {
+            'id': trans_id,
+            'user_id': 1,
+            'date': date_obj.strftime('%Y-%m-%d') if date_obj else None,
+            'time_stamp': timestamp_iso,
+            'body': body,
+            'tx_id': parsed_data['tx_id'],
+            'amount': parsed_data['amount'],
+            'recipient_name': parsed_data['recipient_name'],
+            'recipient_account': parsed_data['recipient_account'],
+            'sender_name': parsed_data['sender_name'],
+            'sender_phone': parsed_data['sender_phone'],
+            'new_balance': parsed_data['new_balance'],
+            'fee': parsed_data['fee'],
+            'transaction_type': parsed_data['transaction_type'],
+            'payment_type': payment_type,
+            'transfer_type': transfer_type,
+            'status': 'Completed',
+            'protocol': protocol,
+            'address': address,
+            'readable_date': readable_date
+        }
         
         transactions.append(transaction)
+        trans_id += 1
     
     return transactions
+
+def save_to_json(transactions, output_file='transactions.json'):
+    """Save transactions to JSON file"""
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(transactions, f, indent=2, ensure_ascii=False)
+    print(f"Saved {len(transactions)} transactions to {output_file}")
+
+if __name__ == '__main__':
+    xml_file = 'modified_sms_v2.xml'
+    transactions = parse_transactions(xml_file)
+    save_to_json(transactions)
+    print(f"Parsed {len(transactions)} transactions successfully")
