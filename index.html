@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NYC Taxi Analytics Dashboard</title>
+    
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    
+    <!-- Link to external CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>NYC Taxi Analytics</h1>
+            <p class="subtitle">Urban Mobility Insights Dashboard</p>
+        </header>
+
+        <!-- Toggle Filter Button -->
+        <button class="btn btn-toggle" onclick="toggleFilters()">Show/Hide Filters</button>
+
+        <!-- Filter Panel -->
+        <div id="filterPanel" class="filter-panel hidden">
+            <h3 style="margin-bottom: 20px;">Filter Trips</h3>
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label>Limit</label>
+                    <input type="number" id="limit" value="100" min="1" max="1000">
+                </div>
+                <div class="filter-group">
+                    <label>Pickup Hour (0-23)</label>
+                    <input type="number" id="pickup_hour" placeholder="Any" min="0" max="23">
+                </div>
+                <div class="filter-group">
+                    <label>Weekday</label>
+                    <select id="pickup_weekday">
+                        <option value="">Any</option>
+                        <option value="0">Monday</option>
+                        <option value="1">Tuesday</option>
+                        <option value="2">Wednesday</option>
+                        <option value="3">Thursday</option>
+                        <option value="4">Friday</option>
+                        <option value="5">Saturday</option>
+                        <option value="6">Sunday</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Time of Day</label>
+                    <input type="text" id="time_of_day" placeholder="morning, afternoon, evening">
+                </div>
+                <div class="filter-group">
+                    <label>Min Speed (km/h)</label>
+                    <input type="number" id="min_speed" placeholder="0">
+                </div>
+                <div class="filter-group">
+                    <label>Max Speed (km/h)</label>
+                    <input type="number" id="max_speed" placeholder="100">
+                </div>
+                <div class="filter-group">
+                    <label>Min Distance (km)</label>
+                    <input type="number" id="min_distance" placeholder="0">
+                </div>
+                <div class="filter-group">
+                    <label>Max Distance (km)</label>
+                    <input type="number" id="max_distance" placeholder="50">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
+            <button class="btn btn-secondary" onclick="resetFilters()">Reset</button>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid" id="statsCards">
+            <div class="stat-card">
+                <div class="stat-label">Total Trips</div>
+                <div class="stat-value" id="totalTrips">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Distance</div>
+                <div class="stat-value" id="avgDistance">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Speed</div>
+                <div class="stat-value" id="avgSpeed">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Duration</div>
+                <div class="stat-value" id="avgDuration">-</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>Trips by Hour</h3>
+                <canvas id="hourlyChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Trips by Weekday</h3>
+                <canvas id="weekdayChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Trips Table -->
+        <div class="table-card">
+            <h3 style="margin-bottom: 20px;">Recent Trips (<span id="tripCount">0</span>)</h3>
+            <div id="loadingDiv" class="loading">
+                <div class="spinner"></div>
+                <p>Loading trips...</p>
+            </div>
+            <div id="tableDiv" class="hidden">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Pickup Time</th>
+                            <th>Duration</th>
+                            <th>Distance</th>
+                            <th>Speed</th>
+                            <th>Passengers</th>
+                            <th>Time of Day</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tripsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Link to external JavaScript -->
+    <script src="script.js"></script>
+</body>
+</html>
